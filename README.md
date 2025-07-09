@@ -257,6 +257,10 @@ And then start a game with the following command (replacing screen names as appr
 
 ```
 dune exe bin/play.exe -- start-game -x <X IP>:<X PORT> -o <O IP>:<O PORT> -x-name kelvin -o-name melvin
+dune exe bin/play.exe -- start-game -x localhost:1025 -o localhost:1026 -x-name kelvin -o-name melvin
+
+dune exe bin/play.exe -- start-game -x 3.133.251.143:1025 -o 3.133.251.143:1026 -x-name kelvin -o-name melvin
+
 ```
 
 To play omok, add the `-omok` flag to the `start-game` command above.
