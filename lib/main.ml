@@ -21,11 +21,7 @@ let win_for_x =
     ]
 
 let non_win =
-  init_game
-    [
-      ({ row = 0; column = 0 }, O);
-      ({ row = 2; column = 2 }, O);
-    ]
+  init_game [ ({ row = 0; column = 0 }, O); ({ row = 2; column = 2 }, O) ]
 
 let print_game (game : Game.t) =
   let board_dim = Game_kind.board_length game.game_kind in
@@ -204,9 +200,9 @@ let winning_moves ~(me : Piece.t) (game : Game.t) : Position.t list =
 
 (* Exercise 4 *)
 let losing_moves ~(me : Piece.t) (game : Game.t) : Position.t list =
-  ignore me;
-  ignore game;
-  failwith "Implement me!"
+  match me with
+  | Piece.X -> winning_moves ~me:Piece.O game
+  | Piece.O -> winning_moves ~me:Piece.X game
 
 let exercise_one =
   Command.async ~summary:"Exercise 1: Where can I move?"
@@ -252,6 +248,28 @@ let exercise_four =
        print_s [%sexp (losing_moves : Position.t list)];
        return ())
 
+let available_moves_that_do_not_immediately_lose ~(me : Piece.t) (game : Game.t)
+    : Position.t list =
+  let available_moves = available_moves game in
+  let losing_moves = losing_moves ~me game in
+  let winning_moves = winning_moves ~me game in
+
+  match losing_moves with
+  | [] -> available_moves
+  | _ ->
+      List.dedup_and_sort ~compare:Position.compare
+        (losing_moves @ winning_moves)
+
+let exercise_six =
+  Command.async ~summary:"Exercise 6: all non-losing moves"
+    (let%map_open.Command () = return () and piece = piece_flag in
+     fun () ->
+       let nonlosing_moves =
+         available_moves_that_do_not_immediately_lose ~me:piece non_win
+       in
+       print_s [%sexp (nonlosing_moves : Position.t list)];
+       return ())
+
 let command =
   Command.group ~summary:"Exercises"
     [
@@ -259,10 +277,64 @@ let command =
       ("two", exercise_two);
       ("three", exercise_three);
       ("four", exercise_four);
+      ("six", exercise_six);
     ]
+
+let score ~(me : Piece.t) (game : Game.t) : Float.t =
+  match evaluate game with
+  | Evaluation.Game_over { winner = Some winner } ->
+      if Piece.equal me winner then Float.infinity else Float.neg_infinity
+  | _ -> 0.0
+
+let rec minimax ~(player : Piece.t) ~(game : Game.t) ~(depth : int)
+    ~(max_player : bool) =
+  let other_player = Piece.flip player in
+  let available_moves = available_moves game in
+
+  if List.length available_moves = 0 || depth = 0 then score ~me:player game
+  else if max_player then
+    List.fold available_moves ~init:Float.neg_infinity ~f:(fun acc position ->
+        let moved_game = Game.set_piece game position player in
+        let lower_minimax_value =
+          minimax ~player ~game:moved_game ~depth:(depth - 1) ~max_player:false
+        in
+        if Float.(lower_minimax_value > acc) then lower_minimax_value else acc)
+  else
+    List.fold available_moves ~init:Float.infinity ~f:(fun acc position ->
+        let moved_game = Game.set_piece game position other_player in
+        let lower_minimax_value =
+          minimax ~player ~game:moved_game ~depth:(depth - 1) ~max_player:true
+        in
+        if Float.(lower_minimax_value < acc) then lower_minimax_value else acc)
+
+let minimax_algo ~(player : Piece.t) ~(game : Game.t) ~(depth : int) =
+  let available_moves = available_moves game in
+  let dummy_pos = { Position.row = -1; Position.column = -1 } in
+  let _, winner =
+    List.fold available_moves ~init:(Float.neg_infinity, dummy_pos)
+      ~f:(fun (acc_val, acc_pos) position ->
+        let moved_game = Game.set_piece game position player in
+        let minimax_value =
+          minimax ~player ~game:moved_game ~depth:(depth - 1) ~max_player:false
+        in
+        if Float.(minimax_value > acc_val) then (minimax_value, position)
+        else (acc_val, acc_pos))
+  in
+  winner
 
 (* Exercise 5 *)
 let make_move ~(game : Game.t) ~(you_play : Piece.t) : Position.t =
-  ignore game;
-  ignore you_play;
-  failwith "Implement me!"
+  let winning_moves = winning_moves ~me:you_play game in
+  match List.random_element winning_moves with
+  | Some winning_pos -> winning_pos
+  | None -> (
+      let losing_moves = losing_moves ~me:you_play game in
+      match List.random_element losing_moves with
+      | Some losing_pos -> losing_pos
+      | None ->
+          let call_minimax = minimax_algo ~player:you_play ~game ~depth:3 in
+          call_minimax)
+(* match List.random_element (available_moves game) with
+          | Some random_pos -> random_pos
+          *)
+(* | None -> { Position.row = -1; Position.column = -1 }) *)
