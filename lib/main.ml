@@ -116,12 +116,16 @@ let check_list_for_win list =
   in
   if all_o then Some Piece.O else if all_x then Some Piece.X else None
 
-let get_pieces_direction game_board row col win_length (down : bool)
-    (right : bool) =
+let get_pieces_direction game_board row col win_length (down : int)
+    (right : int) =
   List.init win_length ~f:(fun pos ->
       let pos = win_length - 1 - pos in
-      let increment_row = if down then row + pos else row in
-      let increment_col = if right then col + pos else col in
+      let increment_row =
+        if down = 1 then row + pos else if down = -1 then row - pos else row
+      in
+      let increment_col =
+        if right = 1 then col + pos else if right = -1 then col - pos else col
+      in
       Map.find game_board
         { Position.row = increment_row; Position.column = increment_col })
 
@@ -137,29 +141,37 @@ let check_for_win (game : Game.t) =
             let col = board_dim - 1 - col in
 
             let down_pieces =
-              get_pieces_direction game_board row col win_length true false
+              get_pieces_direction game_board row col win_length 1 0
             in
             let winner_down = check_list_for_win down_pieces in
 
             let right_pieces =
-              get_pieces_direction game_board row col win_length false true
+              get_pieces_direction game_board row col win_length 0 1
             in
             let winner_right = check_list_for_win right_pieces in
 
-            let diag_pieces =
-              get_pieces_direction game_board row col win_length true true
+            let right_diag_pieces =
+              get_pieces_direction game_board row col win_length 1 1
             in
-            let winner_diagonal = check_list_for_win diag_pieces in
+            let winner_right_diagonal = check_list_for_win right_diag_pieces in
 
-            match winner_diagonal with
+            let left_diag_pieces =
+              get_pieces_direction game_board row col win_length 1 (-1)
+            in
+            let winner_left_diagonal = check_list_for_win left_diag_pieces in
+
+            match winner_right_diagonal with
             | Some piece -> Some piece
             | None -> (
-                match winner_down with
+                match winner_left_diagonal with
                 | Some piece -> Some piece
                 | None -> (
-                    match winner_right with
+                    match winner_down with
                     | Some piece -> Some piece
-                    | None -> None))))
+                    | None -> (
+                        match winner_right with
+                        | Some piece -> Some piece
+                        | None -> None)))))
   in
   List.fold (List.concat results) ~init:None ~f:(fun acc result ->
       match result with
@@ -280,6 +292,12 @@ let command =
       ("six", exercise_six);
     ]
 
+let update_availables (availables : Position.t list)
+    ({ row; column } : Position.t) =
+  List.filter availables
+    ~f:(fun { Position.row = avail_row; Position.column = avail_column } ->
+      not (row = avail_row && column = avail_column))
+
 let score ~(me : Piece.t) (game : Game.t) : Float.t =
   match evaluate game with
   | Evaluation.Game_over { winner = Some winner } ->
@@ -287,23 +305,26 @@ let score ~(me : Piece.t) (game : Game.t) : Float.t =
   | _ -> 0.0
 
 let rec minimax ~(player : Piece.t) ~(game : Game.t) ~(depth : int)
-    ~(max_player : bool) =
+    ~(max_player : bool) ~(available_moves : Position.t list) =
   let other_player = Piece.flip player in
-  let available_moves = available_moves game in
 
   if List.length available_moves = 0 || depth = 0 then score ~me:player game
   else if max_player then
     List.fold available_moves ~init:Float.neg_infinity ~f:(fun acc position ->
         let moved_game = Game.set_piece game position player in
+        let new_available_moves = update_availables available_moves position in
         let lower_minimax_value =
           minimax ~player ~game:moved_game ~depth:(depth - 1) ~max_player:false
+            ~available_moves:new_available_moves
         in
         if Float.(lower_minimax_value > acc) then lower_minimax_value else acc)
   else
     List.fold available_moves ~init:Float.infinity ~f:(fun acc position ->
         let moved_game = Game.set_piece game position other_player in
+        let new_available_moves = update_availables available_moves position in
         let lower_minimax_value =
           minimax ~player ~game:moved_game ~depth:(depth - 1) ~max_player:true
+            ~available_moves:new_available_moves
         in
         if Float.(lower_minimax_value < acc) then lower_minimax_value else acc)
 
@@ -314,8 +335,10 @@ let minimax_algo ~(player : Piece.t) ~(game : Game.t) ~(depth : int) =
     List.fold available_moves ~init:(Float.neg_infinity, dummy_pos)
       ~f:(fun (acc_val, acc_pos) position ->
         let moved_game = Game.set_piece game position player in
+        let new_available_moves = update_availables available_moves position in
         let minimax_value =
           minimax ~player ~game:moved_game ~depth:(depth - 1) ~max_player:false
+            ~available_moves:new_available_moves
         in
         if Float.(minimax_value > acc_val) then (minimax_value, position)
         else (acc_val, acc_pos))
@@ -332,9 +355,5 @@ let make_move ~(game : Game.t) ~(you_play : Piece.t) : Position.t =
       match List.random_element losing_moves with
       | Some losing_pos -> losing_pos
       | None ->
-          let call_minimax = minimax_algo ~player:you_play ~game ~depth:3 in
+          let call_minimax = minimax_algo ~player:you_play ~game ~depth:2 in
           call_minimax)
-(* match List.random_element (available_moves game) with
-          | Some random_pos -> random_pos
-          *)
-(* | None -> { Position.row = -1; Position.column = -1 }) *)
